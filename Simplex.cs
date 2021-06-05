@@ -9,7 +9,6 @@ namespace MMK_LB_2_SIMPLEX
     class Simplex
     {
         private double[,] table; //simplex table
-        private Dictionary<int,int> N = new Dictionary<int, int>(); // non base variables
         private Dictionary<int, int> B = new Dictionary<int, int>(); // base variables
         private int n, m;
 
@@ -17,90 +16,53 @@ namespace MMK_LB_2_SIMPLEX
         {
             n = A.GetLength(1); m = A.GetLength(0);
 
-           
+           if(n != c.Length - 1)
+            {
+                throw new Exception();
+            }
 
             if (m != b.Length)
             {
                 throw new Exception("Number of constraints in A doesn't match number in b.");
             }
 
-            this.table = new double[m + 1, n - m + 1]; 
-            table[0, 0] = c[0];
-            for (int i = 1; i < n - m + 1; i++)
-            {
-              
-                table[0, i] = c[i];
+            table = new double[m + 1, n + m + 1]; //m + c string, n + m(artifical basis) + 1(b column)
+
+            //Fill table with c
+            table[m, 0] = c[0];
+            for (int i = 1; i < n + 1; i++)
+            { 
+                table[m, i] = -c[i];
             }
 
-
-            bool basis;
-            int basisI = 0;
-            for (int i = 0; i < n; i++)
+            //Fill with A and b
+            for (int i = 0; i < A.GetLength(0); i++)
             {
-                if (basisI == m + 1)
-                    break;
-                basis = false;
-                int j = 0;
-                while (j < m && A[j, i] != 1)
-                    j++;
-                if (j == m)
-                    continue;
-                else
+                for (int j = 0; j < A.GetLength(1) + 1; j++)
                 {
-                    basis = true;
-                    j++;
-                    while (j < m)
+                    if (j == 0)
                     {
-                        if(A[j,i] != 0)
-                        {
-                            basis = false;
-                            break;
-                        }
-                        j++;
-                    }
-
-                    if (basis)
-                    {
-                        B.Add(basisI, i);
-                        basisI++;
-                    }
-                }
-            }
-
-            for (int i = 1; i < m + 1; i++)
-            {
-                table[i, 0] = b[i - 1];
-                int colI = 1;
-                for (int j = 0; j < n; j++)
-                {
-                    if (B.ContainsValue(j))
+                        table[i, j] = b[i];
                         continue;
-                    table[i, colI] = A[i - 1, j];
-                    colI++;
+                    }
+                    table[i, j] = A[i, j - 1];
                 }
             }
 
-            //log();
-
-            for (int i = 0; i < n; i++) 
+            //Fill basis 1-s
+            for (int i = n + 1, j = 0; j < table.GetLength(0) - 1; j++, i++)
             {
-                if (B.ContainsValue(i))
-                    continue;
-                N.Add(i,i);
-            }            
-        }
-        public void log()
-        {
-            for (int j = 0; j < table.GetLength(0); j++)
-            {
-                for (int k = 0; k < table.GetLength(1); k++)
-                {
-                    Console.Write(String.Format("{0,4:F1} ", table[j, k]));
-                }
-                Console.WriteLine();
+                table[j, i] = 1;
             }
-            Console.WriteLine();
+           
+            log();
+
+            for (int i = 0; i < m; i++)
+            {
+                B.Add(i, i + n + 1);
+            }
         }
+       
 
         public Tuple<double, double[]> maximize()
         {
@@ -108,92 +70,123 @@ namespace MMK_LB_2_SIMPLEX
             {
 
                 int e = -1;
-                for (int i = 1; i < table.GetLength(1); i++)
+                int l = -1;
+                double MaxMinRatio = -1;
+
+                for (int i = 1; i < n + 1; i++)
                 {
-                    if (table[0, i] > 0)
+                    if (table[m, i] < 0)
                     {
-                        e = i;
-                        break;
+                        int _e = i;
+                        int _l = 0;
+                        while (_l < table.GetLength(0) - 1 && table[_l, _e] <= 0)
+                            _l++;
+
+                        double ratio = table[_l, 0] / table[_l, _e];
+
+                        for (int j = _l + 1; j < table.GetLength(0); j++)
+                            if (table[j, _e] > 0 && table[j, 0] / table[j, _e] < ratio)
+                            {
+                                ratio = table[j, 0] / table[j, _e];
+                                _l = j;
+                            }
+                        if(ratio > MaxMinRatio)
+                        {
+                            MaxMinRatio = ratio;
+                            e = _e;
+                            l = _l;
+                        }
                     }
                }
 
-                // If no coefficient > 0, there's no more maximizing to do, and we're almost done
-                if (e == -1) break;
 
-                
-                int l = 1;
-                while (l< table.GetLength(0) && table[l, e] <= 0)
-                    l++;
-
-                double ratio = table[0, e] / table[l, e];
-                
-                for(int i = l + 1; i < table.GetLength(0); i++)
-                    if(table[i,e]!=0 && table[0, e] / table[i, e] < ratio)
+                if (e == -1)
+                {
+                    if (B.Values.Max() < n + 1)
+                        break;
+                    else
                     {
-                        ratio = table[0, e] / table[i, e];
-                        l = i;
-                    }
+                        l = B.FirstOrDefault(x => x.Value == B.Values.Max()).Key;
+                        double maxValue = -1;
+                        double objectiveVal;
 
-                pivot(e, l);
+                        for (int i = 1; i < n + 1; i++)
+                        {
+                            if (table[l, i] > 0)
+                            {
+                                objectiveVal = table[m, 0] + (table[l, 0] / table[l, i]) * (-table[m, i]);
+                                
+                                if(objectiveVal > maxValue)
+                                {
+                                    maxValue = objectiveVal;
+                                    e = i;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                pivot(l, e);
             }
+            Console.WriteLine();
+            log();
 
             double[] x = new double[n];
             
-            foreach(var key in B.Keys)
+            foreach(int key in B.Keys)
             {
-                x[B[key]] = table[key+1, 0]; 
+                x[B[key] - 1] = table[key, 0]; 
             }
+           
 
             // Return max and variables
-            return Tuple.Create<double, double[]>(table[0, 0], x);
+            return Tuple.Create<double, double[]>(table[m, 0], x);
         }
         private void pivot(int l, int e)
         {
-           
-            double[,] table2 = new double[table.GetLength(0), table.GetLength(1)];
-            table2[l, e] = 1 / table[l, e];
-
+            double ratio = 1 / table[l, e];
             for (int i = 0; i < table.GetLength(1); i++)
             {
-                if (i == e)
-                    continue;
-                table2[l, i] = table[l, i] * table2[l, e];
+                table[l, i] *= ratio;
             }
 
             for (int i = 0; i < table.GetLength(0); i++)
             {
                 if (i == l)
                     continue;
-                table2[i, e] = table[i, e] * -table2[l, e];
-            }
-
-            for(int i =0; i< table.GetLength(0); i++)
-            {
-                if (i == l)
+                if (table[i, e] == 0)
                     continue;
-                for(int j = 0; j < table.GetLength(1); j++)
+
+                ratio = -table[i, e];
+                for (int j = 0; j < table.GetLength(1); j++)
                 {
-                    if (j == e)
-                        continue;
-                    table2[i, j] = table2[i, e] * table[l, j];
+                    table[i, j] += table[l, j] * ratio;
                 }
             }
+            B.Remove(l);
+            B.Add(l, e);
+        }
 
+        public void log()
+        {
+            for (int i = 0; i < table.GetLength(1); i++)
+            {
+                if (i == 0)
+                    Console.Write(String.Format("{0, 7}|", "bi"));
+                else
+                {
+                    Console.Write(String.Format("{0,7}|", "x" + i));
+                }
+            }
+            Console.WriteLine();
             for (int i = 0; i < table.GetLength(0); i++)
             {
                 for (int j = 0; j < table.GetLength(1); j++)
                 {
-                    if (j == e || i == l)
-                        table[i, j] = table2[i, j];
-                    else
-                    {
-                        table[i, j] = table[i, j] + table2[i, j];
-                    }
+                    Console.Write(String.Format("{0, 7:F1}|", table[i, j]));
                 }
+                Console.WriteLine();
             }
-            int temp = N[e - 1];
-            N[e - 1] = B[l - 1];
-            B[l - 1] = temp;
         }
     }
 }
